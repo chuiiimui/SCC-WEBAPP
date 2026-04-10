@@ -9,8 +9,12 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
+<<<<<<< HEAD
     "resolveJsonModule": true,
     "types": ["node"]
+=======
+    "resolveJsonModule": true
+>>>>>>> 4f727c7 (...//D//)
   },
   "include": ["**/*.ts"],
   "exclude": ["node_modules", "dist"]

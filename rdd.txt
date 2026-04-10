@@ -1,0 +1,396 @@
+import express from "express";
+import axios from "axios";
+import cors from "cors";
+import session from "express-session";
+import morgan from "morgan";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import type { Request, Response } from "express"; // ✅ only types
+import { storeSearch } from "./utils.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const app = express();
+
+// Configuration from environment variables
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const HOST = process.env.HOST || "0.0.0.0"; // Bind to all interfaces for reverse proxy compatibility
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:5173";
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const isProd = process.env.NODE_ENV === "production";
+const SESSION_SECRET = process.env.SESSION_SECRET || "dev-session-secret";
+
+// --------------------
+// Environment Validation
+// --------------------
+function validateEnvironment() {
+  if (isProd) {
+    if (SESSION_SECRET === "dev-session-secret") {
+      console.error("❌ FATAL: SESSION_SECRET must be set to a secure value in production");
+      process.exit(1);
+    }
+    if (!process.env.SESSION_SECRET) {
+      console.error("❌ FATAL: SESSION_SECRET environment variable is required in production");
+      process.exit(1);
+    }
+  }
+}
+validateEnvironment();
+
+// Trust proxy for Toolforge and other reverse proxy setups
+app.set("trust proxy", 1);
+
+// --------------------
+// Middleware
+// --------------------
+
+// Logging middleware - minimal in production
+const morganFormat = isProd ? "combined" : "dev";
+app.use(morgan(morganFormat));
+
+// CORS - use process.env.CORS_ORIGIN with fallback to hardcoded Toolforge origins
+const allowedOrigins = [
+  CORS_ORIGIN,
+  "https://sccghana.toolforge.org",
+  "http://sccghana.toolforge.org",
+  "https://ghanasupremecases.toolforge.org",
+  "http://ghanasupremecases.toolforge.org",
+];
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.indexOf(origin) === -1) {
+        return callback(new Error('The CORS policy for this site does not allow access from the specified Origin.'));
+      }
+      return callback(null, true);
+    },
+    credentials: true,
+  })
+);
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Session configuration with NODE_ENV-based security settings
+app.use(
+  session({
+    name: "search_session",
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
+    },
+  })
+);
+
+// Serve frontend static files from the client/dist directory (production only)
+if (isProd) {
+  const clientDistPath = join(__dirname, "../../client/dist");
+  app.use(express.static(clientDistPath, {
+    maxAge: "1d",
+    etag: true,
+    lastModified: true,
+    setHeaders: (res: Response, filePath: string) => {
+      // Cache static assets longer (js, css, images)
+      if (/\.(js|css|png|jpg|jpeg|gif|svg|woff2?)$/.test(filePath)) {
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
+      // Prevent MIME type sniffing
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    },
+  }));
+}
+
+// --------------------
+// Static docs
+// --------------------
+const docsPath = join(__dirname, "../docs/html");
+app.use(
+  "/docs",
+  express.static(docsPath, {
+    index: "index.html",
+    dotfiles: "deny",
+    etag: true,
+    lastModified: true,
+    maxAge: isProd ? "1d" : "0",
+    setHeaders: (res: Response, path: string) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      res.setHeader("X-XSS-Protection", "1; mode=block");
+    },
+  })
+);
+
+// --------------------
+// Country config
+// --------------------
+const COUNTRY_CONFIG: Record<string, { courtId: string; countryId: string }> = {
+  ghana: { courtId: "Q1513611", countryId: "Q117" },
+  nigeria: { courtId: "Q16011598", countryId: "Q1033" },
+  kenya: { courtId: "Q7653543", countryId: "Q114" },
+  south_africa: { courtId: "Q1360033", countryId: "Q258" },
+};
+
+// --------------------
+// Health check
+// --------------------
+app.get("/api/health", (_req, res) => {
+  res.json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || "development",
+  });
+});
+
+// --------------------
+// Root
+// --------------------
+app.get("/", (_req, res) => {
+  res.json({
+    message: "Supreme Court Cases API",
+    version: "1.0.0",
+    endpoints: {
+      health: `GET ${BASE_URL}/api/health`,
+      countries: `GET ${BASE_URL}/api/countries`,
+      search_all_cases: `GET ${BASE_URL}/search`,
+      search_with_query: `GET ${BASE_URL}/search?q={query}&country={countryCode}`,
+      recent_searches: `GET ${BASE_URL}/api/recent-searches`,
+      translations_all: `GET ${BASE_URL}/api/translations`,
+      translations_case: `GET ${BASE_URL}/api/translations/{caseId}`,
+    },
+  });
+});
+
+// --------------------
+// Countries
+// --------------------
+app.get("/api/countries", (_req, res) => {
+  const countries = Object.keys(COUNTRY_CONFIG).map((key) => ({
+    code: key,
+    name: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " "),
+    wikidataId: COUNTRY_CONFIG[key].countryId,
+  }));
+  res.json({ success: true, totalCountries: countries.length, countries });
+});
+
+// --------------------
+// Types & Interfaces
+// --------------------
+interface WikidataBinding {
+  item?: { value: string };
+  itemLabel?: { value: string };
+  itemDescription?: { value: string };
+  date?: { value: string };
+  legal_citation?: { value: string };
+  courtLabel?: { value: string };
+  majority_opinionLabel?: { value: string };
+  sourceLabel?: { value: string };
+  judges?: { value: string };
+}
+
+interface CaseResult {
+  caseId: string;
+  title: string;
+  description: string;
+  date: string;
+  citation: string;
+  court: string;
+  majorityOpinion: string;
+  sourceLabel: string;
+  judges: string;
+  articleUrl: string;
+  country: string;
+}
+
+interface RecentSearch {
+  query: string;
+  timestamp: number;
+}
+
+// --------------------
+// Utility Functions
+// --------------------
+function buildSparqlQuery(countryId: string, courtId: string): string {
+  return `
+    SELECT DISTINCT ?item ?itemLabel ?itemDescription ?date ?legal_citation ?courtLabel ?majority_opinionLabel ?sourceLabel (GROUP_CONCAT(DISTINCT ?judge; SEPARATOR = ", ") AS ?judges) WHERE {
+  {
+    SELECT DISTINCT * WHERE {
+      ?item (wdt:P31/(wdt:P279*)) wd:Q114079647;
+        (wdt:P17/(wdt:P279*)) wd:${countryId};
+        (wdt:P1001/(wdt:P279*)) wd:${countryId};
+        (wdt:P793/(wdt:P279*)) wd:Q7099379;
+        wdt:P4884 ?court.
+      ?court (wdt:P279*) wd:${courtId}.
+    }
+    LIMIT 5000
+  }
+  ?item wdt:P577 ?date;
+    wdt:P1031 ?legal_citation;
+    wdt:P1433 ?source;
+    wdt:P1594 _:b3.
+  _:b3 rdfs:label ?judge.
+  FILTER((LANG(?judge)) = "en")
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],mul,en". }
+}
+    GROUP BY ?item ?itemLabel ?itemDescription ?date ?legal_citation ?courtLabel ?majority_opinionLabel ?sourceLabel
+    ORDER BY (?date)
+  `;
+}
+
+function mapWikidataResult(item: WikidataBinding, country: string): CaseResult {
+  const caseId = item.item?.value.split("/").pop() || "Not Available";
+  return {
+    caseId,
+    title: item.itemLabel?.value || "Not Available",
+    description: item.itemDescription?.value || "No description available",
+    date: item.date?.value?.split("T")[0] || "Date not recorded",
+    citation: item.legal_citation?.value || "Citation unavailable",
+    court: item.courtLabel?.value || "Court not specified",
+    majorityOpinion: item.majority_opinionLabel?.value || "Majority opinion unavailable",
+    sourceLabel: item.sourceLabel?.value || "Source unavailable",
+    judges: item.judges?.value || "Judges unavailable",
+    articleUrl: item.item?.value || "",
+    country: country.charAt(0).toUpperCase() + country.slice(1).replace(/_/g, " "),
+  };
+}
+
+// --------------------
+// Search
+// --------------------
+
+app.get("/search", async (req: Request, res: Response) => {
+  const userQuery = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+  const countryParam = typeof req.query.country === "string" ? req.query.country.trim().toLowerCase() : "ghana";
+
+  const countryConfig = COUNTRY_CONFIG[countryParam];
+  if (!countryConfig)
+    return res.status(400).json({ success: false, error: `Unsupported country: ${countryParam}` });
+
+  const { countryId, courtId } = countryConfig;
+
+  // Store search in session if query is provided
+  if (userQuery) {
+    storeSearch(req, userQuery);
+  }
+
+  const sparqlQuery = buildSparqlQuery(countryId, courtId);
+
+  try {
+    const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparqlQuery)}&format=json`;
+    const { data } = await axios.get(url, { timeout: 15000 });
+
+    const cases: CaseResult[] = (data as any).results.bindings.map((item: WikidataBinding) =>
+      mapWikidataResult(item, countryParam)
+    ).filter((c: CaseResult) =>
+      !userQuery || [c.title, c.description, c.court, c.citation, c.judges].some(f => f.toLowerCase().includes(userQuery))
+    );
+
+    res.json({ success: true, results: cases, totalResults: cases.length });
+  } catch (error) {
+    console.error("❌ Search API Error:", error);
+    res.status(500).json({ success: false, error: "Search request failed." });
+  }
+});
+
+// --------------------
+// Filter
+// --------------------
+app.get(\"/filter\", async (req: Request, res: Response) => {
+  const keyword = typeof req.query.keyword === \"string\" ? req.query.keyword.trim().toLowerCase() : \"\";
+  const year = typeof req.query.year === \"string\" ? req.query.year.trim() : \"\";
+  const judge = typeof req.query.judge === \"string\" ? req.query.judge.trim().toLowerCase() : \"\";
+  const caseType = typeof req.query.type === \"string\" ? req.query.type.trim().toLowerCase() : \"\";
+  const countryParam = typeof req.query.country === \"string\" ? req.query.country.trim().toLowerCase() : \"ghana\";\n\n  const countryConfig = COUNTRY_CONFIG[countryParam];
+  if (!countryConfig)\n    return res.status(400).json({ success: false, error: `Unsupported country: ${countryParam}` });\n\n  const { countryId, courtId } = countryConfig;
+  const sparqlQuery = buildSparqlQuery(countryId, courtId);\n\n  try {
+    const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparqlQuery)}&format=json`;\n    const { data } = await axios.get(url, { timeout: 15000 });\n\n    const cases: CaseResult[] = (data as any).results.bindings\n      .map((item: WikidataBinding) => mapWikidataResult(item, countryParam))\n      .filter((c: CaseResult) => {\n        let matches = true;\n        if (keyword) {\n          matches = matches && [c.title, c.description, c.court, c.citation, c.judges].some(f => f.toLowerCase().includes(keyword));\n        }\n        if (year) {\n          matches = matches && c.date.includes(year);\n        }\n        if (judge) {\n          matches = matches && c.judges.toLowerCase().includes(judge);\n        }\n        if (caseType) {\n          matches = matches && c.court.toLowerCase().includes(caseType);\n        }\n        return matches;\n      });\n\n    res.json({ success: true, results: cases, totalResults: cases.length });\n  } catch (error) {\n    console.error(\"\u274c Filter API Error:\", error);\n    res.status(500).json({ success: false, error: \"Filter request failed.\" });\n  }\n});\n\n// --------------------\n// Recent Searches\n// --------------------
+app.get("/api/recent-searches", (req: Request, res: Response) => {
+  const searches = (req.session.recentSearches as RecentSearch[]) || [];
+  res.json({ success: true, searches, totalSearches: searches.length });
+});
+
+// --------------------
+// Translations
+// --------------------
+app.get("/api/translations", async (req, res) => {
+  const countryParam = typeof req.query.country === "string" ? req.query.country.trim().toLowerCase() : "ghana";
+  await handleTranslations(undefined, countryParam, res);
+});
+
+app.get("/api/translations/:caseId", async (req, res) => {
+  const countryParam = typeof req.query.country === "string" ? req.query.country.trim().toLowerCase() : "ghana";
+  await handleTranslations(req.params.caseId, countryParam, res);
+});
+
+async function handleTranslations(caseId: string | undefined, country: string, res: Response) {
+  const countryConfig = COUNTRY_CONFIG[country];
+  if (!countryConfig) return res.status(400).json({ success: false, error: `Unsupported country: ${country}` });
+  const { countryId, courtId } = countryConfig;
+
+  try {
+    const baseQuery = buildSparqlQuery(countryId, courtId);
+    const url = `https://query.wikidata.org/sparql?query=${encodeURIComponent(baseQuery)}&format=json`;
+    const { data } = await axios.get(url, { timeout: 15000 });
+    const bindings = (data as any).results.bindings;
+
+    if (caseId && bindings.length === 0) return res.status(404).json({ success: false, error: `Case not found: ${caseId}` });
+
+    const translationsMap = new Map<string, any>();
+    bindings.forEach((item: WikidataBinding) => {
+      const cId = item.item?.value.split("/").pop() || "Unknown";
+      const caseTitle = item.itemLabel?.value || "Unknown Case";
+
+      if (!translationsMap.has(cId)) translationsMap.set(cId, { caseId: cId, caseTitle, availableLanguages: [] });
+      const caseData = translationsMap.get(cId);
+      // Add default English entry if none exist
+      if (caseData.availableLanguages.length === 0) {
+        caseData.availableLanguages.push({
+          languageCode: "en",
+          languageLabel: "English",
+          wikidataUrl: item.item?.value || `https://www.wikidata.org/entity/${cId}`,
+          source: "Wikidata",
+        });
+      }
+    });
+
+    res.json({ success: true, totalCases: translationsMap.size, results: Array.from(translationsMap.values()) });
+  } catch (error) {
+    console.error("❌ Translation API Error:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch translation data." });
+  }
+}
+
+// Catch-all route for frontend SPA routing
+// This ensures all non-API, non-docs routes return index.html for client-side routing
+if (isProd) {
+  const clientDistPath = join(__dirname, "../../client/dist");
+  app.get(/^(?!\/api\/)(?!\/docs\/).*/, (_req, res) => {
+    const indexPath = join(clientDistPath, "index.html");
+    res.sendFile(indexPath, (err) => {
+      if (err) {
+        console.error("Error serving index.html:", err);
+        res.status(500).json({ success: false, error: "Failed to load application" });
+      }
+    });
+  });
+}
+
+// --------------------
+// Start server
+// --------------------
+app.listen(PORT, HOST, () => {
+  if (!isProd) {
+    console.log(`Server running on ${HOST}:${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log(`CORS Origin: ${CORS_ORIGIN}`);
+    console.log(`Base URL: ${BASE_URL}`);
+  }
+});

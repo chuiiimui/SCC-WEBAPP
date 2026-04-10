@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import React, { useState, useRef, useCallback, useMemo } from 'react';
+=======
+import React, { useState, useMemo } from 'react';
+>>>>>>> 4f727c7 (...//D//)
 import Header from './Header';
 import Footer from './Footer';
 import CaseCard from './CaseCard';
@@ -36,7 +40,10 @@ const SearchResultsPage: React.FC<SearchResultsPageProps> = ({
   const { query, results, loading, error, pagination, appliedFilters, totalCount } = searchState;
   const [itemsPerPage, setItemsPerPage] = useState(pagination?.itemsPerPage || 20);
   const [sortOption, setSortOption] = useState<SortOption>('relevance');
+<<<<<<< HEAD
   const observerRef = useRef<IntersectionObserver | null>(null);
+=======
+>>>>>>> 4f727c7 (...//D//)
   
   // Sort results based on selected option
   const sortedResults = useMemo(() => {
@@ -45,6 +52,7 @@ const SearchResultsPage: React.FC<SearchResultsPageProps> = ({
 
   const displayCount = totalCount !== undefined ? totalCount : (pagination?.totalItems || results.length);
   
+<<<<<<< HEAD
   const lastCaseElementRef = useCallback((node: HTMLDivElement | null) => {
     if (loading) return;
     if (observerRef.current) observerRef.current.disconnect();
@@ -57,13 +65,18 @@ const SearchResultsPage: React.FC<SearchResultsPageProps> = ({
     if (node) observerRef.current.observe(node);
   }, [loading, pagination, onSearch, query, itemsPerPage]);
 
+=======
+>>>>>>> 4f727c7 (...//D//)
   const handlePageChange = (page: number) => {
     if (onSearch && query) {
       onSearch(query, page, itemsPerPage);
       window.scrollTo({ top: 0, behavior: 'smooth' });
+<<<<<<< HEAD
     } else if (onApplyFilters) {
       // If filtered, we need to maintain filter state
       window.scrollTo({ top: 0, behavior: 'smooth' });
+=======
+>>>>>>> 4f727c7 (...//D//)
     }
   };
 
@@ -158,6 +171,7 @@ const SearchResultsPage: React.FC<SearchResultsPageProps> = ({
                 </p>
               </div>
               <div className="results-grid">
+<<<<<<< HEAD
                 {sortedResults.map((caseItem, index) => {
                   const isLastElement = index === sortedResults.length - 1;
                   return (
@@ -172,6 +186,16 @@ const SearchResultsPage: React.FC<SearchResultsPageProps> = ({
                     </div>
                   );
                 })}
+=======
+                {sortedResults.map((caseItem, index) => (
+                  <div key={`${caseItem.caseId}-${index}`}>
+                    <CaseCard
+                      case={caseItem}
+                      searchQuery={query}
+                    />
+                  </div>
+                ))}
+>>>>>>> 4f727c7 (...//D//)
               </div>
               
               {/* Pagination Component */}
