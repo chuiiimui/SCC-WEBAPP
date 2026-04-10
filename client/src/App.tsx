@@ -5,6 +5,10 @@ import SearchResultsPage from "./components/SearchResultsPage";
 import AboutUs from "./components/AboutUs";
 import { FilterValues } from "./components/FilterPanel";
 import { SearchHistoryManager } from "./utils/searchHistory";
+<<<<<<< HEAD
+=======
+import { apiClient } from "./utils/apiClient";
+>>>>>>> 4f727c7 (...//D//)
 import "./styles/App.css";
 
 export interface Case {
@@ -52,6 +56,7 @@ function App() {
   });
   const [isOffline, setIsOffline] = useState(false);
 
+<<<<<<< HEAD
   // --- HELPER: Get the correct API URL automatically ---
   const getApiBaseUrl = () => {
     // 1. If we set a specific URL in .env, use that (e.g. for testing)
@@ -68,6 +73,8 @@ function App() {
     return "http://localhost:9090";
   };
 
+=======
+>>>>>>> 4f727c7 (...//D//)
   // Listen for custom event from Footer to navigate to About page
   useEffect(() => {
     const handleNavigateToAbout = () => {
@@ -91,6 +98,7 @@ function App() {
     setCurrentView("results");
 
     try {
+<<<<<<< HEAD
       const apiBaseUrl = getApiBaseUrl(); // <--- UPDATED THIS LINE
       
       const response = await fetch(
@@ -137,6 +145,19 @@ function App() {
         );
       }
 
+=======
+      const data = await apiClient.search({
+        q: query,
+        page,
+        limit,
+        country: "ghana",
+      });
+
+      if (!data.success || !Array.isArray(data.results)) {
+        throw new Error("Invalid response format from server.");
+      }
+
+>>>>>>> 4f727c7 (...//D//)
       // Save to search history
       SearchHistoryManager.addToHistory(query, data.results.length);
 
@@ -144,8 +165,20 @@ function App() {
         ...prev,
         loading: false,
         results: data.results,
+<<<<<<< HEAD
         pagination: data.pagination,
         totalCount: data.results.length,
+=======
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(data.totalResults / limit),
+          totalItems: data.totalResults,
+          itemsPerPage: limit,
+          hasNextPage: page < Math.ceil(data.totalResults / limit),
+          hasPreviousPage: page > 1,
+        },
+        totalCount: data.totalResults,
+>>>>>>> 4f727c7 (...//D//)
         error:
           data.results.length === 0 ? `No matches found for "${query}".` : null,
       }));
@@ -154,13 +187,21 @@ function App() {
 
       if (error.name === "AbortError" || error.name === "TimeoutError") {
         errorMessage =
+<<<<<<< HEAD
           "Request timed out. Wikidata may be slow. Please try again.";
+=======
+          "Request timed out. Please check your connection and try again.";
+>>>>>>> 4f727c7 (...//D//)
       } else if (
         error.name === "TypeError" &&
         error.message.includes("fetch")
       ) {
         errorMessage =
+<<<<<<< HEAD
           "Cannot connect to backend server. Please ensure the backend is reachable.";
+=======
+          "Cannot connect to backend server. Please ensure the backend is running on http://localhost:9090";
+>>>>>>> 4f727c7 (...//D//)
       } else if (error.message) {
         errorMessage = error.message;
       } else {
@@ -211,6 +252,7 @@ function App() {
     setCurrentView("results");
 
     try {
+<<<<<<< HEAD
       const apiBaseUrl = getApiBaseUrl(); // <--- UPDATED THIS LINE
 
       // Build query parameters
@@ -264,12 +306,40 @@ function App() {
         );
       }
 
+=======
+      const data = await apiClient.filter({
+        keyword: filters.keyword,
+        year: filters.year,
+        judge: filters.judge,
+        caseType: filters.caseType,
+        page,
+        limit,
+        country: "ghana",
+      });
+
+      if (!data.success || !Array.isArray(data.results)) {
+        throw new Error("Invalid response format from server.");
+      }
+
+>>>>>>> 4f727c7 (...//D//)
       setSearchState((prev) => ({
         ...prev,
         loading: false,
         results: data.results || [],
+<<<<<<< HEAD
         pagination: data.pagination,
         totalCount: data.results?.length || 0,
+=======
+        pagination: {
+          currentPage: data.page,
+          totalPages: data.totalPages,
+          totalItems: data.totalResults,
+          itemsPerPage: data.limit,
+          hasNextPage: data.page < data.totalPages,
+          hasPreviousPage: data.page > 1,
+        },
+        totalCount: data.totalResults,
+>>>>>>> 4f727c7 (...//D//)
         appliedFilters: filters,
         error:
           data.results && data.results.length === 0
@@ -283,13 +353,21 @@ function App() {
 
       if (error.name === "AbortError" || error.name === "TimeoutError") {
         errorMessage =
+<<<<<<< HEAD
           "Request timed out. Wikidata may be slow. Please try again.";
+=======
+          "Request timed out. Please try again.";
+>>>>>>> 4f727c7 (...//D//)
       } else if (
         error.name === "TypeError" &&
         error.message.includes("fetch")
       ) {
         errorMessage =
+<<<<<<< HEAD
           "Cannot connect to backend server. Please ensure the backend is reachable.";
+=======
+          "Cannot connect to backend server. Please ensure the backend is running.";
+>>>>>>> 4f727c7 (...//D//)
       } else if (error.message) {
         errorMessage = error.message;
       } else {

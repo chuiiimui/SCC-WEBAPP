@@ -41,8 +41,16 @@ const HomePage: React.FC<HomePageProps> = ({
   useEffect(() => {
     const fetchCases = async () => {
       try {
+<<<<<<< HEAD
         const base = import.meta.env.VITE_API_BASE_URL || "https://tools.wmflabs.org/ghanasupremecases";
         const res = await fetch(`${base}/search?q=&limit=200`);
+=======
+        // Use the proper API base URL
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || 
+          (import.meta.env.PROD ? "" : "http://localhost:9090");
+        
+        const res = await fetch(`${baseUrl}/search?q=&limit=200`);
+>>>>>>> 4f727c7 (...//D//)
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.results)) {

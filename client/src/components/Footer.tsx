@@ -130,7 +130,11 @@ const Footer: React.FC<FooterProps> = ({ onNavigateToAbout, onNavigateToHome }) 
                 <i className="fas fa-home"></i>
                 <span>Home</span>
               </a>
+<<<<<<< HEAD
               <a href="#contribute" className="footer-quick-link">
+=======
+              <a href="https://github.com/Sunkanmi1/SCC-WEBAPP" className="footer-quick-link">
+>>>>>>> 4f727c7 (...//D//)
                 <i className="fas fa-hand-holding-heart"></i>
                 <span>Contribute</span>
               </a>
@@ -138,7 +142,11 @@ const Footer: React.FC<FooterProps> = ({ onNavigateToAbout, onNavigateToHome }) 
                 <i className="fas fa-info-circle"></i>
                 <span>About SCC</span>
               </a>
+<<<<<<< HEAD
               <a href="#contact" className="footer-quick-link">
+=======
+              <a href="https://github.com/Sunkanmi1/SCC-WEBAPP" className="footer-quick-link">
+>>>>>>> 4f727c7 (...//D//)
                 <i className="fas fa-envelope"></i>
                 <span>Contact team</span>
               </a>
